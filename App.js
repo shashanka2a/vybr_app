@@ -1,5 +1,10 @@
 // App.js - Firebase Email OTP Implementation
 import React, { useState, useCallback } from 'react';
+// Example usage in App.js
+import firebaseApp from './firebaseConfig';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+
 import {
   View,
   Text,
