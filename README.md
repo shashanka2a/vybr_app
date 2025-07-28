@@ -67,10 +67,12 @@ GMAIL_APP_PASSWORD=your_app_password
 - ✅ Email OTP verification
 - ✅ User signup/login
 - ✅ Basic profile creation
+- ✅ University verification
+- ✅ Onboarding and Matching UI
 
 ## Still building
 - 🚧 GPT personality chat
-- 🚧 Matching algorithm
+- 🚧 Matching logic
 - 🚧 Chat between matches
 - 📋 Profile pictures
-- 📋 University verification
+
