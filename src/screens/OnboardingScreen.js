@@ -14,7 +14,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-const OnboardingScreen = ({ navigation, user }) => {
+import openAIService from '../services/openai';
+import qlooService from '../services/qloo';
+import firebaseService from '../services/firebase';
+
+const OnboardingScreen = ({ user, onComplete }) => {
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -133,10 +137,10 @@ const OnboardingScreen = ({ navigation, user }) => {
     }, 1500 + Math.random() * 1000); // Random delay for natural feel
   };
 
-  const showMatchingResults = () => {
+  const showMatchingResults = async () => {
     const resultsMessage = {
       id: messages.length + 1,
-      text: "🎉 Perfect! I've analyzed your personality and I'm ready to find your ideal roommate matches. Let me save your profile and start the magic!",
+      text: "🎉 Perfect! I've analyzed your personality. Now let me find your ideal roommate matches using our advanced AI...",
       sender: 'ai',
       timestamp: new Date(),
       isResult: true,
@@ -144,10 +148,318 @@ const OnboardingScreen = ({ navigation, user }) => {
     
     setMessages(prev => [...prev, resultsMessage]);
     
-    // Navigate to matching screen after delay
-    setTimeout(() => {
-      navigation.navigate('Matching', { userProfile });
-    }, 3000);
+    try {
+      console.log('🚀 Starting matching process with real AI integration...');
+      
+      // Check if we have API keys
+      const hasOpenAIKey = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== '';
+      const hasQlooKey = process.env.QLOO_API_KEY && process.env.QLOO_API_KEY !== '';
+      
+      console.log('🔑 API Keys available:', { 
+        openai: hasOpenAIKey ? 'Yes' : 'No', 
+        qloo: hasQlooKey ? 'Yes' : 'No' 
+      });
+      
+      let personalityData, qlooProfile;
+      
+      if (hasOpenAIKey) {
+        try {
+          // Try real OpenAI integration
+          console.log('🤖 Using real OpenAI integration...');
+          const openaiData = await openAIService.completeOnboarding();
+          const qlooCompatibleData = openAIService.getQlooCompatibleData();
+          personalityData = qlooCompatibleData.personality;
+          console.log('✅ OpenAI personality analysis complete:', personalityData);
+          
+          if (hasQlooKey) {
+            // Try real Qloo integration
+            console.log('🧬 Using real Qloo integration...');
+            const tasteProfile = qlooService.createTasteProfile(
+              qlooCompatibleData.responses, 
+              qlooCompatibleData.personality
+            );
+            qlooProfile = await qlooService.createQlooProfile(tasteProfile);
+            console.log('✅ Qloo profile created:', qlooProfile);
+          } else {
+            // Fallback Qloo profile
+            qlooProfile = await qlooService.createSimulatedQlooProfile({
+              preferences: { lifestyle: personalityData }
+            });
+            console.log('✅ Simulated Qloo profile created');
+          }
+        } catch (error) {
+          console.warn('⚠️ OpenAI API failed, falling back to demo mode:', error);
+          hasOpenAIKey = false; // Force fallback
+        }
+      }
+      
+      if (!hasOpenAIKey) {
+        // Create demo personality data from conversation
+        console.log('🎭 Using demo personality analysis...');
+        personalityData = {
+          sleepSchedule: currentStep >= 2 ? this.extractSleepScheduleFromMessages() : 'flexible',
+          studyHabits: currentStep >= 3 ? this.extractStudyHabitsFromMessages() : 'flexible',
+          cleanliness: currentStep >= 4 ? this.extractCleanlinessFromMessages() : 'moderate',
+          socialLevel: currentStep >= 5 ? this.extractSocialLevelFromMessages() : 'moderate',
+          major: this.extractMajorFromMessages() || 'Computer Science',
+          university: user.university
+        };
+        
+        qlooProfile = {
+          profile_id: `demo_qloo_${user.uid}`,
+          taste_vector: Array.from({ length: 50 }, () => Math.random() * 2 - 1),
+          recommendations: {
+            music: ['indie', 'electronic'],
+            lifestyle_compatibility: personalityData
+          }
+        };
+        
+        console.log('✅ Demo personality data created:', personalityData);
+      }
+      
+      // Update user profile in Firebase
+      const completeProfileData = {
+        openaiResponses: messages.filter(m => m.sender === 'user').map((m, i) => ({
+          step: i + 1,
+          answer: m.text,
+          timestamp: m.timestamp
+        })),
+        personalityAnalysis: personalityData,
+        qlooProfileId: qlooProfile.profile_id,
+        tasteVector: qlooProfile.taste_vector,
+        compatibilityPreferences: {
+          lifestyle: personalityData
+        },
+        usingRealAI: hasOpenAIKey && hasQlooKey,
+        completedAt: new Date().toISOString()
+      };
+      
+      console.log('💾 Updating user profile in Firebase...');
+      await firebaseService.updateUserProfile(user.uid, completeProfileData);
+      console.log('✅ User profile updated');
+      
+      // Get available roommates for matching
+      console.log('🔍 Getting available roommates...');
+      const roommates = await firebaseService.getAvailableRoommates(user.uid);
+      console.log(`✅ Found ${roommates.length} potential roommates from ${user.university}`);
+      
+      let compatibilityMatches = [];
+      
+      if (roommates.length === 0) {
+        console.log('⚠️ No real roommates found, creating demo matches...');
+        
+        // Create demo matches for the user's university
+        const demoMatches = this.createUniversitySpecificDemoMatches(user.university, personalityData);
+        compatibilityMatches = demoMatches;
+        
+        const noRealMatchesMessage = {
+          id: messages.length + 2,
+          text: `I don't see any other ${user.university} students who have completed onboarding yet. Here are some demo profiles to show you how awesome the matching will be once more students join! 🎓`,
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, noRealMatchesMessage]);
+        
+      } else {
+        // Find compatible matches
+        console.log('🎯 Finding compatible matches...');
+        compatibilityMatches = await qlooService.findCompatibleRoommates(
+          qlooProfile.profile_id,
+          qlooProfile.taste_vector,
+          roommates,
+          personalityData
+        );
+        console.log('✅ Compatibility matches found:', compatibilityMatches);
+        
+        // Save matches to Firebase
+        await firebaseService.saveCompatibilityMatches(user.uid, compatibilityMatches);
+        console.log('💾 Matches saved to Firebase');
+      }
+      
+      // Complete onboarding
+      const completeData = {
+        user: user,
+        openaiAnalysis: { personality: personalityData },
+        qlooProfile: qlooProfile,
+        compatibilityMatches: compatibilityMatches,
+        userProfile: completeProfileData,
+        isDemo: roommates.length === 0,
+        usingRealAI: hasOpenAIKey && hasQlooKey
+      };
+      
+      console.log('🚀 Calling onComplete with data');
+      
+      setTimeout(() => {
+        if (onComplete && typeof onComplete === 'function') {
+          onComplete(completeData);
+        } else {
+          console.error('❌ onComplete is not a function:', onComplete);
+        }
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Matching process error:', error);
+      
+      // Ultimate fallback
+      const fallbackData = {
+        user: user,
+        openaiAnalysis: { personality: { demo: true } },
+        qlooProfile: { profile_id: 'error_fallback' },
+        compatibilityMatches: this.createUniversitySpecificDemoMatches(user.university, {}),
+        userProfile: { error: true, timestamp: new Date().toISOString() },
+        isDemo: true,
+        error: error.message
+      };
+      
+      setTimeout(() => {
+        if (onComplete && typeof onComplete === 'function') {
+          onComplete(fallbackData);
+        }
+      }, 2000);
+    }
+  };
+
+  // Helper functions to extract personality from messages
+  const extractSleepScheduleFromMessages = () => {
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const sleepMessage = userMessages.find(m => 
+      m.text.toLowerCase().includes('night') || 
+      m.text.toLowerCase().includes('early') || 
+      m.text.toLowerCase().includes('sleep')
+    );
+    
+    if (sleepMessage) {
+      if (sleepMessage.text.toLowerCase().includes('night') || sleepMessage.text.toLowerCase().includes('late')) {
+        return 'night_owl';
+      } else if (sleepMessage.text.toLowerCase().includes('early') || sleepMessage.text.toLowerCase().includes('morning')) {
+        return 'early_bird';
+      }
+    }
+    return 'flexible';
+  };
+
+  const extractStudyHabitsFromMessages = () => {
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const studyMessage = userMessages.find(m => 
+      m.text.toLowerCase().includes('music') || 
+      m.text.toLowerCase().includes('quiet') || 
+      m.text.toLowerCase().includes('study')
+    );
+    
+    if (studyMessage) {
+      if (studyMessage.text.toLowerCase().includes('music') || studyMessage.text.toLowerCase().includes('background')) {
+        return 'background_music';
+      } else if (studyMessage.text.toLowerCase().includes('quiet') || studyMessage.text.toLowerCase().includes('silence')) {
+        return 'quiet';
+      }
+    }
+    return 'flexible';
+  };
+
+  const extractCleanlinessFromMessages = () => {
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const cleanMessage = userMessages.find(m => 
+      m.text.toLowerCase().includes('clean') || 
+      m.text.toLowerCase().includes('organized') || 
+      m.text.toLowerCase().includes('messy')
+    );
+    
+    if (cleanMessage) {
+      if (cleanMessage.text.toLowerCase().includes('organized') || cleanMessage.text.toLowerCase().includes('very clean')) {
+        return 'very_organized';
+      } else if (cleanMessage.text.toLowerCase().includes('messy')) {
+        return 'relaxed';
+      }
+    }
+    return 'moderate';
+  };
+
+  const extractSocialLevelFromMessages = () => {
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const socialMessage = userMessages.find(m => 
+      m.text.toLowerCase().includes('party') || 
+      m.text.toLowerCase().includes('social') || 
+      m.text.toLowerCase().includes('quiet') ||
+      m.text.toLowerCase().includes('friends')
+    );
+    
+    if (socialMessage) {
+      if (socialMessage.text.toLowerCase().includes('party') || socialMessage.text.toLowerCase().includes('love social')) {
+        return 'very_social';
+      } else if (socialMessage.text.toLowerCase().includes('quiet') || socialMessage.text.toLowerCase().includes('alone')) {
+        return 'quiet';
+      }
+    }
+    return 'moderate';
+  };
+
+  const extractMajorFromMessages = () => {
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const majorMessage = userMessages.find(m => 
+      m.text.toLowerCase().includes('computer') || 
+      m.text.toLowerCase().includes('engineering') || 
+      m.text.toLowerCase().includes('business') ||
+      m.text.toLowerCase().includes('psychology') ||
+      m.text.toLowerCase().includes('major') ||
+      m.text.toLowerCase().includes('studying')
+    );
+    
+    if (majorMessage) {
+      const text = majorMessage.text.toLowerCase();
+      if (text.includes('computer')) return 'Computer Science';
+      if (text.includes('engineering')) return 'Engineering';
+      if (text.includes('business')) return 'Business';
+      if (text.includes('psychology')) return 'Psychology';
+      if (text.includes('biology')) return 'Biology';
+      if (text.includes('english')) return 'English';
+      if (text.includes('math')) return 'Mathematics';
+    }
+    return 'Undeclared';
+  };
+
+  const createUniversitySpecificDemoMatches = (university, userPersonality) => {
+    const baseMatches = [
+      {
+        roommate_id: `demo_${university}_1`,
+        name: `Demo ${university} Student 1`,
+        major: 'Psychology',
+        year: 'Junior',
+        university: university,
+        bio: `${university} psychology major who loves collaborative studying! 📚`,
+        interests: ['Psychology', 'Study Groups', 'Coffee', 'Music'],
+        compatibility_score: 87,
+        explanation: 'High compatibility based on study habits and social preferences',
+        compatibility_reasons: [
+          '📚 Both prefer collaborative study environments',
+          '☕ Share love for coffee shop study sessions',
+          '🎵 Similar music taste for background studying',
+          '🏛️ Both attending the same university'
+        ],
+        lifestyle: userPersonality,
+        aura_match: 'Study Buddy'
+      },
+      {
+        roommate_id: `demo_${university}_2`,
+        name: `Demo ${university} Student 2`,
+        major: 'Engineering',
+        year: 'Senior',
+        university: university,
+        bio: `${university} engineering senior with great organizational skills! ⚙️`,
+        interests: ['Engineering', 'Technology', 'Fitness', 'Gaming'],
+        compatibility_score: 82,
+        explanation: 'Good compatibility with complementary strengths',
+        compatibility_reasons: [
+          '⚙️ Excellent organizational skills complement your style',
+          '🎮 Shares similar interests in technology',
+          '🏋️ Balanced lifestyle with fitness and studies',
+          '🏛️ Fellow ${university} student'
+        ],
+        lifestyle: userPersonality,
+        aura_match: 'Organized Achiever'
+      }
+    ];
+    
+    return baseMatches;
   };
 
   const sendMessage = (messageText = currentMessage) => {

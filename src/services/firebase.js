@@ -1,5 +1,4 @@
 // src/services/firebase.js
-
 import { Alert } from 'react-native';
 
 class FirebaseOTPService {
@@ -127,7 +126,7 @@ class FirebaseOTPService {
     return this.users.get(email);
   }
 
-  // Update user profile after onboarding
+  // Update user profile after onboarding with OpenAI responses
   async updateUserProfile(uid, profileData) {
     // Find user by uid
     for (let [email, user] of this.users.entries()) {
@@ -136,10 +135,76 @@ class FirebaseOTPService {
           ...user,
           ...profileData,
           onboardingCompleted: true,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          // Store OpenAI conversation responses
+          openai_responses: profileData.openaiResponses || [],
+          personality_analysis: profileData.personalityAnalysis || {},
+          // Qloo integration fields
+          qloo_profile_id: profileData.qlooProfileId || null,
+          taste_vector: profileData.tasteVector || null,
+          compatibility_preferences: profileData.compatibilityPreferences || {}
         };
         this.users.set(email, updatedUser);
-        console.log('User profile updated:', updatedUser);
+        console.log('User profile updated with AI data:', updatedUser);
+        return updatedUser;
+      }
+    }
+    throw new Error('User not found');
+  }
+
+  // Get available roommates for matching (same university only)
+  async getAvailableRoommates(currentUserId) {
+    const roommates = [];
+    
+    // First, find the current user to get their university
+    let currentUserUniversity = null;
+    for (let [email, user] of this.users.entries()) {
+      if (user.uid === currentUserId) {
+        currentUserUniversity = user.university;
+        break;
+      }
+    }
+    
+    if (!currentUserUniversity) {
+      console.log('❌ Current user not found for roommate matching');
+      return [];
+    }
+    
+    console.log(`🏫 Finding roommates for university: ${currentUserUniversity}`);
+    
+    // Find users from the same university (excluding current user)
+    for (let [email, user] of this.users.entries()) {
+      if (user.uid !== currentUserId && 
+          user.onboardingCompleted && 
+          user.university === currentUserUniversity) {
+        roommates.push({
+          id: user.uid,
+          email: user.email,
+          university: user.university,
+          profile: user.profile,
+          personality_analysis: user.personality_analysis,
+          qloo_profile_id: user.qloo_profile_id,
+          taste_vector: user.taste_vector,
+          openai_responses: user.openai_responses
+        });
+      }
+    }
+    
+    console.log(`✅ Found ${roommates.length} potential roommates from ${currentUserUniversity}`);
+    return roommates;
+  }
+
+  // Save compatibility matches
+  async saveCompatibilityMatches(userId, matches) {
+    for (let [email, user] of this.users.entries()) {
+      if (user.uid === userId) {
+        const updatedUser = {
+          ...user,
+          compatibility_matches: matches,
+          last_matched: new Date().toISOString()
+        };
+        this.users.set(email, updatedUser);
+        console.log('Compatibility matches saved:', matches);
         return updatedUser;
       }
     }

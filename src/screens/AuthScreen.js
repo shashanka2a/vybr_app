@@ -1,3 +1,4 @@
+// src/screens/AuthScreen.js
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -17,6 +18,7 @@ const AuthScreen = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [otpSentTime, setOtpSentTime] = useState(null);
+  const [demoOtp, setDemoOtp] = useState(''); // Store demo OTP
 
   const handleEmailChange = useCallback((text) => {
     setEmail(text);
@@ -45,14 +47,21 @@ const AuthScreen = ({ onAuthSuccess }) => {
     setLoading(true);
 
     try {
-      await firebaseService.sendEmailOTP(email);
+      const result = await firebaseService.sendEmailOTP(email);
+      console.log('OTP Service Result:', result); // Debug log
       setOtpSentTime(new Date());
-      setMessage('OTP sent to your email!');
+      
+      if (result.otp) {
+        setDemoOtp(result.otp); // Store the demo OTP
+        console.log('Demo OTP set:', result.otp); // Debug log
+      }
+      
+      setMessage(`OTP sent to your email! Demo code: ${result.otp || 'Not found'}`);
       
       setTimeout(() => {
         setScreen('verify-otp');
         setMessage('');
-      }, 2000);
+      }, 3000); // Longer delay to see the OTP
 
     } catch (error) {
       console.error('Send OTP error:', error);
@@ -72,6 +81,9 @@ const AuthScreen = ({ onAuthSuccess }) => {
   const handleVerifyOTP = async () => {
     setMessage('');
     
+    console.log('Attempting to verify OTP:', otp); // Debug log
+    console.log('Email being verified:', email); // Debug log
+    
     if (!otp) {
       setMessage('Please enter the verification code');
       return;
@@ -86,10 +98,11 @@ const AuthScreen = ({ onAuthSuccess }) => {
 
     try {
       const result = await firebaseService.verifyEmailOTP(email, otp);
+      console.log('Verification result:', result); // Debug log
       
       setMessage('Email verified successfully!');
       setTimeout(() => {
-        onAuthSuccess(result.user); // Pass user data to parent
+        onAuthSuccess(result.user);
       }, 1000);
 
     } catch (error) {
@@ -113,9 +126,10 @@ const AuthScreen = ({ onAuthSuccess }) => {
     setLoading(true);
     
     try {
-      await firebaseService.sendEmailOTP(email);
+      // For demo, just show success message without calling API
       setOtpSentTime(new Date());
-      setMessage('New verification code sent!');
+      setMessage('New verification code sent! Use 123456');
+      setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       console.error('Resend OTP error:', error);
       setMessage('Unable to resend code. Please try again.');
@@ -210,6 +224,8 @@ const AuthScreen = ({ onAuthSuccess }) => {
               returnKeyType="done"
               textAlign="center"
             />
+            {/* Clean demo hint right under the input */}
+            <Text style={styles.inputHint}>For demo, use: 123456</Text>
           </View>
 
           <TouchableOpacity 
@@ -389,6 +405,13 @@ const styles = StyleSheet.create({
   successMessage: {
     color: '#2e7d32',
     backgroundColor: '#e8f5e8',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 6,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 
