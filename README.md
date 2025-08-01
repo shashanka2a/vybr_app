@@ -51,11 +51,19 @@ npm start
 
 ## File structure
 ```
-├── App.js                 # Main app file
-├── functions/
-│   └── index.js           # Email OTP functions
-├── firestore.rules        # Database rules
-└── package.json
+vybr-app/
+├── App.js                    # Clean navigation logic
+├── src/
+│   ├── screens/
+│   │   ├── AuthScreen.js     # Email OTP (extracted from App.js)
+│   │   ├── OnboardingScreen.js
+│   │   └── MatchingScreen.js
+│   └── services/
+│       ├── firebase.js       # Firebase OTP service
+│       └── openai.js         # OpenAI service
+|       └── qloo.js           # Qloo service
+├── package.json
+└── .env
 ```
 
 ## Environment variables
