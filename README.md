@@ -15,6 +15,11 @@ Find your perfect roommate through AI-powered personality matching. Built for co
 - OpenAI GPT (personality assessment)
 - Qloo API (taste matching)
 
+## Architecture & Data Flow
+
+![Vybr Architecture Flowchart](Vybr_Flow_Chart.png)
+
+
 ## How to run locally
 
 1. **Clone and install**
